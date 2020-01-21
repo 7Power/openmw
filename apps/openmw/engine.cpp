@@ -112,8 +112,8 @@ bool OMW::Engine::frame(float frametime)
         bool guiActive = mEnvironment.getWindowManager()->isGuiMode();
 
         osg::Timer_t beforeScriptTick = osg::Timer::instance()->tick();
-        if (mEnvironment.getStateManager()->getState()==
-            MWBase::StateManager::State_Running)
+        if (mEnvironment.getStateManager()->getState()!=
+            MWBase::StateManager::State_NoGame)
         {
             if (!paused)
             {
@@ -133,6 +133,7 @@ bool OMW::Engine::frame(float frametime)
             {
                 double hours = (frametime * mEnvironment.getWorld()->getTimeScaleFactor()) / 3600.0;
                 mEnvironment.getWorld()->advanceTime(hours, true);
+                mEnvironment.getWorld()->rechargeItems(frametime, true);
             }
         }
         osg::Timer_t afterScriptTick = osg::Timer::instance()->tick();
@@ -257,9 +258,9 @@ OMW::Engine::~Engine()
 
     mWorkQueue = nullptr;
 
-    mResourceSystem.reset();
-
     mViewer = nullptr;
+
+    mResourceSystem.reset();
 
     delete mEncoder;
     mEncoder = nullptr;
@@ -283,7 +284,8 @@ void OMW::Engine::enableFSStrict(bool fsStrict)
 void OMW::Engine::setDataDirs (const Files::PathContainer& dataDirs)
 {
     mDataDirs = dataDirs;
-    mFileCollections = Files::Collections (dataDirs, !mFSStrict);
+    mDataDirs.insert(mDataDirs.begin(), (mResDir / "vfs"));
+    mFileCollections = Files::Collections (mDataDirs, !mFSStrict);
 }
 
 // Add BSA archive
@@ -428,11 +430,11 @@ void OMW::Engine::createWindow(Settings::Manager& settings)
 
     osg::ref_ptr<osg::Camera> camera = mViewer->getCamera();
     camera->setGraphicsContext(graphicsWindow);
-    camera->setViewport(0, 0, width, height);
+    camera->setViewport(0, 0, traits->width, traits->height);
 
     mViewer->realize();
 
-    mViewer->getEventQueue()->getCurrentEventState()->setWindowRectangle(0, 0, width, height);
+    mViewer->getEventQueue()->getCurrentEventState()->setWindowRectangle(0, 0, traits->width, traits->height);
 }
 
 void OMW::Engine::setWindowIcon()
@@ -498,8 +500,11 @@ void OMW::Engine::prepareEngine (Settings::Manager & settings)
         if(boost::filesystem::exists(input2)) {
             boost::filesystem::copy_file(input2, keybinderUser);
             keybinderUserExists = boost::filesystem::exists(keybinderUser);
+            Log(Debug::Info) << "Loading keybindings file: " << keybinderUser;
         }
     }
+    else
+        Log(Debug::Info) << "Loading keybindings file: " << keybinderUser;
 
     // find correct path to the game controller bindings
     // File format for controller mappings is different for SDL <= 2.0.4, 2.0.5, and >= 2.0.6
@@ -514,8 +519,17 @@ void OMW::Engine::prepareEngine (Settings::Manager & settings)
         controllerFileName = "gamecontrollerdb.txt";
     }
 
+    const std::string userdefault = mCfgMgr.getUserConfigPath().string() + "/" + controllerFileName;
     const std::string localdefault = mCfgMgr.getLocalPath().string() + "/" + controllerFileName;
     const std::string globaldefault = mCfgMgr.getGlobalPath().string() + "/" + controllerFileName;
+
+    std::string userGameControllerdb;
+    if (boost::filesystem::exists(userdefault)){
+        userGameControllerdb = userdefault;
+    }
+    else
+        userGameControllerdb = "";
+
     std::string gameControllerdb;
     if (boost::filesystem::exists(localdefault))
         gameControllerdb = localdefault;
@@ -524,7 +538,7 @@ void OMW::Engine::prepareEngine (Settings::Manager & settings)
     else
         gameControllerdb = ""; //if it doesn't exist, pass in an empty string
 
-    MWInput::InputManager* input = new MWInput::InputManager (mWindow, mViewer, mScreenCaptureHandler, mScreenCaptureOperation, keybinderUser, keybinderUserExists, gameControllerdb, mGrab);
+    MWInput::InputManager* input = new MWInput::InputManager (mWindow, mViewer, mScreenCaptureHandler, mScreenCaptureOperation, keybinderUser, keybinderUserExists, userGameControllerdb, gameControllerdb, mGrab);
     mEnvironment.setInputManager (input);
 
     std::string myguiResources = (mResDir / "mygui").string();
@@ -673,6 +687,11 @@ void OMW::Engine::go()
     // Setup viewer
     mViewer = new osgViewer::Viewer;
     mViewer->setReleaseContextAtEndOfFrameHint(false);
+
+#if OSG_VERSION_GREATER_OR_EQUAL(3,5,5)
+    // Do not try to outsmart the OS thread scheduler (see bug #4785).
+    mViewer->setUseConfigureAffinity(false);
+#endif
 
     mScreenCaptureOperation = new WriteScreenshotToFileOperation(mCfgMgr.getUserDataPath().string(),
         Settings::Manager::getString("screenshot format", "General"));

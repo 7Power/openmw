@@ -3,6 +3,7 @@
 #include <components/esm/aisequence.hpp>
 
 #include "../mwbase/environment.hpp"
+#include "../mwbase/windowmanager.hpp"
 #include "../mwbase/world.hpp"
 
 #include "../mwworld/class.hpp"
@@ -10,6 +11,7 @@
 
 #include "movement.hpp"
 #include "creaturestats.hpp"
+#include "combat.hpp"
 
 namespace MWMechanics
 {
@@ -57,7 +59,7 @@ bool AiPursue::execute (const MWWorld::Ptr& actor, CharacterController& characte
     if (pathTo(actor, dest, duration, pathTolerance) &&
         std::abs(dest.z() - actorPos.z()) < pathTolerance) // check the true distance in case the target is far away in Z-direction
     {
-        target.getClass().activate(target,actor).get()->execute(actor); //Arrest player when reached
+        MWBase::Environment::get().getWindowManager()->pushGuiMode(MWGui::GM_Dialogue, actor); //Arrest player when reached
         return true;
     }
 

@@ -397,7 +397,7 @@ namespace MWSound
 
         mNextMusic = filename;
 
-        mMusic->setFadeout(0.5f);
+        mMusic->setFadeout(1.f);
     }
 
     void SoundManager::startRandomTitle()
@@ -520,7 +520,7 @@ namespace MWSound
         Stream *sound = playVoice(decoder, pos, (ptr == MWMechanics::getPlayer()));
         if(!sound) return;
 
-        mActiveSaySounds.insert(std::make_pair(ptr, sound));
+        mSaySoundsQueue.emplace(ptr, sound);
     }
 
     float SoundManager::getSaySoundLoudness(const MWWorld::ConstPtr &ptr) const
@@ -566,9 +566,38 @@ namespace MWSound
         return true;
     }
 
+    bool SoundManager::sayActive(const MWWorld::ConstPtr &ptr) const
+    {
+        SaySoundMap::const_iterator snditer = mSaySoundsQueue.find(ptr);
+        if(snditer != mSaySoundsQueue.end())
+        {
+            if(mOutput->isStreamPlaying(snditer->second))
+                return true;
+            return false;
+        }
+
+        snditer = mActiveSaySounds.find(ptr);
+        if(snditer != mActiveSaySounds.end())
+        {
+            if(mOutput->isStreamPlaying(snditer->second))
+                return true;
+            return false;
+        }
+
+        return false;
+    }
+
     void SoundManager::stopSay(const MWWorld::ConstPtr &ptr)
     {
-        SaySoundMap::iterator snditer = mActiveSaySounds.find(ptr);
+        SaySoundMap::iterator snditer = mSaySoundsQueue.find(ptr);
+        if(snditer != mSaySoundsQueue.end())
+        {
+            mOutput->finishStream(snditer->second);
+            mUnusedStreams.push_back(snditer->second);
+            mSaySoundsQueue.erase(snditer);
+        }
+
+        snditer = mActiveSaySounds.find(ptr);
         if(snditer != mActiveSaySounds.end())
         {
             mOutput->finishStream(snditer->second);
@@ -739,6 +768,9 @@ namespace MWSound
 
     void SoundManager::stopSound(const std::string& soundId)
     {
+        if(!mOutput->isInitialized())
+            return;
+
         Sound_Buffer *sfx = loadSound(Misc::StringUtils::lowerCase(soundId));
         if (!sfx) return;
 
@@ -747,6 +779,9 @@ namespace MWSound
 
     void SoundManager::stopSound3D(const MWWorld::ConstPtr &ptr, const std::string& soundId)
     {
+        if(!mOutput->isInitialized())
+            return;
+
         Sound_Buffer *sfx = loadSound(Misc::StringUtils::lowerCase(soundId));
         if (!sfx) return;
 
@@ -761,7 +796,10 @@ namespace MWSound
             for(SoundBufferRefPair &snd : snditer->second)
                 mOutput->finishSound(snd.first);
         }
-        SaySoundMap::iterator sayiter = mActiveSaySounds.find(ptr);
+        SaySoundMap::iterator sayiter = mSaySoundsQueue.find(ptr);
+        if(sayiter != mSaySoundsQueue.end())
+            mOutput->finishStream(sayiter->second);
+        sayiter = mActiveSaySounds.find(ptr);
         if(sayiter != mActiveSaySounds.end())
             mOutput->finishStream(sayiter->second);
     }
@@ -775,6 +813,12 @@ namespace MWSound
                 for(SoundBufferRefPair &sndbuf : snd.second)
                     mOutput->finishSound(sndbuf.first);
             }
+        }
+
+        for(SaySoundMap::value_type &snd : mSaySoundsQueue)
+        {
+            if(!snd.first.isEmpty() && snd.first != MWMechanics::getPlayer() && snd.first.getCell() == cell)
+                mOutput->finishStream(snd.second);
         }
 
         for(SaySoundMap::value_type &snd : mActiveSaySounds)
@@ -880,7 +924,7 @@ namespace MWSound
         {
             if(r - pos < sndref.mChance)
             {
-                playSound(sndref.mSound.toString(), 1.0f, 1.0f);
+                playSound(sndref.mSound, 1.0f, 1.0f);
                 break;
             }
             pos += sndref.mChance;
@@ -986,6 +1030,15 @@ namespace MWSound
 
     void SoundManager::updateSounds(float duration)
     {
+        // We update active say sounds map for specific actors here
+        // because for vanilla compatibility we can't do it immediately.
+        SaySoundMap::iterator queuesayiter = mSaySoundsQueue.begin();
+        while (queuesayiter != mSaySoundsQueue.end())
+        {
+            mActiveSaySounds[queuesayiter->first] = queuesayiter->second;
+            mSaySoundsQueue.erase(queuesayiter++);
+        }
+
         static float timePassed = 0.0;
 
         timePassed += duration;
@@ -1187,6 +1240,12 @@ namespace MWSound
             sound->setBaseVolume(volumeFromType(sound->getPlayType()));
             mOutput->updateStream(sound);
         }
+        for(SaySoundMap::value_type &snd : mSaySoundsQueue)
+        {
+            Stream *sound = snd.second;
+            sound->setBaseVolume(volumeFromType(sound->getPlayType()));
+            mOutput->updateStream(sound);
+        }
         for(Stream *sound : mActiveTracks)
         {
             sound->setBaseVolume(volumeFromType(sound->getPlayType()));
@@ -1218,7 +1277,16 @@ namespace MWSound
             mActiveSounds.erase(snditer);
             mActiveSounds.emplace(updated, std::move(sndlist));
         }
-        SaySoundMap::iterator sayiter = mActiveSaySounds.find(old);
+
+        SaySoundMap::iterator sayiter = mSaySoundsQueue.find(old);
+        if(sayiter != mSaySoundsQueue.end())
+        {
+            Stream *stream = sayiter->second;
+            mSaySoundsQueue.erase(sayiter);
+            mSaySoundsQueue.emplace(updated, stream);
+        }
+
+        sayiter = mActiveSaySounds.find(old);
         if(sayiter != mActiveSaySounds.end())
         {
             Stream *stream = sayiter->second;
@@ -1294,7 +1362,7 @@ namespace MWSound
 
     void SoundManager::clear()
     {
-        stopMusic();
+        SoundManager::stopMusic();
 
         for(SoundMap::value_type &snd : mActiveSounds)
         {
@@ -1310,6 +1378,13 @@ namespace MWSound
         mActiveSounds.clear();
         mUnderwaterSound = nullptr;
         mNearWaterSound = nullptr;
+
+        for(SaySoundMap::value_type &snd : mSaySoundsQueue)
+        {
+            mOutput->finishStream(snd.second);
+            mUnusedStreams.push_back(snd.second);
+        }
+        mSaySoundsQueue.clear();
 
         for(SaySoundMap::value_type &snd : mActiveSaySounds)
         {

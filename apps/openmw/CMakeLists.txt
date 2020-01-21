@@ -8,8 +8,7 @@ set(GAME
 )
 
 if (ANDROID)
-    set(GAME ${GAME} android_commandLine.cpp)
-    set(GAME ${GAME} android_main.c)
+    set(GAME ${GAME} android_main.cpp)
 endif()
 
 set(GAME_HEADER
@@ -63,7 +62,7 @@ add_openmw_dir (mwsound
 add_openmw_dir (mwworld
     refdata worldimp scene globals class action nullaction actionteleport
     containerstore actiontalk actiontake manualref player cellvisitors failedaction
-    cells localscripts customdata inventorystore ptr actionopen actionread
+    cells localscripts customdata inventorystore ptr actionopen actionread actionharvest
     actionequip timestamp actionalchemy cellstore actionapply actioneat
     store esmstore recordcmp fallback actionrepair actionsoulgem livecellref actiondoor
     contentloader esmloader actiontrap cellreflist cellref physicssystem weather projectilemanager
@@ -82,9 +81,9 @@ add_openmw_dir (mwclass
 add_openmw_dir (mwmechanics
     mechanicsmanagerimp stat creaturestats magiceffects movement actorutil
     drawstate spells activespells npcstats aipackage aisequence aipursue alchemy aiwander aitravel aifollow aiavoiddoor aibreathe
-    aicast aiescort aiface aiactivate aicombat repair enchanting pathfinding pathgrid security spellsuccess spellcasting
+    aicast aiescort aiface aiactivate aicombat recharge repair enchanting pathfinding pathgrid security spellsuccess spellcasting
     disease pickpocket levelledlist combat steering obstacle autocalcspell difficultyscaling aicombataction actor summoning
-    character actors objects aistate coordinateconverter trading weaponpriority spellpriority
+    character actors objects aistate coordinateconverter trading weaponpriority spellpriority weapontype
     )
 
 add_openmw_dir (mwstate

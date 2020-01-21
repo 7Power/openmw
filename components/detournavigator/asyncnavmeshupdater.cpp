@@ -1,4 +1,4 @@
-﻿#include "asyncnavmeshupdater.hpp"
+#include "asyncnavmeshupdater.hpp"
 #include "debug.hpp"
 #include "makenavmesh.hpp"
 #include "settings.hpp"
@@ -135,7 +135,7 @@ namespace DetourNavigator
             }
             catch (const std::exception& e)
             {
-                Log(Debug::Error) << "AsyncNavMeshUpdater::process exception: ", e.what();
+                Log(Debug::Error) << "AsyncNavMeshUpdater::process exception: " << e.what();
             }
         }
         Log(Debug::Debug) << "Stop navigator jobs processing";

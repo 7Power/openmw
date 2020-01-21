@@ -7,6 +7,8 @@
 
 #include <components/settings/settings.hpp>
 
+#include <osgUtil/IncrementalCompileOperation>
+
 #include "objects.hpp"
 
 #include "renderinginterface.hpp"
@@ -88,6 +90,8 @@ namespace MWRender
                          Resource::ResourceSystem* resourceSystem, SceneUtil::WorkQueue* workQueue,
                          const std::string& resourcePath, DetourNavigator::Navigator& navigator);
         ~RenderingManager();
+
+        osgUtil::IncrementalCompileOperation* getIncrementalCompileOperation();
 
         MWRender::Objects& getObjects();
 
@@ -204,11 +208,10 @@ namespace MWRender
         float getCameraDistance() const;
         Camera* getCamera();
         const osg::Vec3f& getCameraPosition() const;
-        void togglePOV();
+        void togglePOV(bool force = false);
         void togglePreviewMode(bool enable);
         bool toggleVanityMode(bool enable);
         void allowVanityMode(bool allow);
-        void togglePlayerLooking(bool enable);
         void changeVanityModeScale(float factor);
 
         /// temporarily override the field of view with given value.

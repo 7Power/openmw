@@ -1,7 +1,7 @@
 #ifndef MISC_STRINGOPS_H
 #define MISC_STRINGOPS_H
 
-#include <cstring>
+#include <cctype>
 #include <string>
 #include <algorithm>
 
@@ -17,6 +17,19 @@ class StringUtils
             return toLower(x) < toLower(y);
         }
     };
+
+    // Allow to convert complex arguments to C-style strings for format() function
+    template <typename T>
+    static T argument(T value) noexcept
+    {
+        return value;
+    }
+
+    template <typename T>
+    static T const * argument(std::basic_string<T> const & value) noexcept
+    {
+        return value.c_str();
+    }
 
 public:
 
@@ -212,31 +225,79 @@ public:
         return str;
     }
 
-    /** @brief Replaces the first occurrence of a string in another string.
-     *
-     * @param str The string to operate on.
-     * @param what The string to replace.
-     * @param with The replacement string.
-     * @param whatLen The length of the string to replace.
-     * @param withLen The length of the replacement string.
-     *
-     * @return A reference to the string passed in @p str.
-     */
-    static std::string &replace(std::string &str, const char *what, const char *with,
-                                std::size_t whatLen=std::string::npos, std::size_t withLen=std::string::npos)
+    // Requires some C++11 features:
+    // 1. std::string needs to be contiguous
+    // 2. std::snprintf with zero size (second argument) returns an output string size
+    // 3. variadic templates support
+    template <typename ... Args>
+    static std::string format(const char* fmt, Args const & ... args)
     {
-        if (whatLen == std::string::npos)
-            whatLen = strlen(what);
+        auto size = std::snprintf(nullptr, 0, fmt, argument(args) ...);
+        // Note: sprintf also writes a trailing null character. We should remove it.
+        std::string ret(size+1, '\0');
+        std::sprintf(&ret[0], fmt, argument(args) ...);
+        ret.erase(size);
 
-        if (withLen == std::string::npos)
-            withLen = strlen(with);
-
-        std::size_t found;
-        if ((found = str.find(what)) != std::string::npos)
-            str.replace(found, whatLen, with, withLen);
-
-        return str;
+        return ret;
     }
+
+    template <typename ... Args>
+    static std::string format(const std::string& fmt, Args const & ... args)
+    {
+        return format(fmt.c_str(), args ...);
+    }
+
+    static inline void trim(std::string &s)
+    {
+        // left trim
+        s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](int ch)
+        {
+            return !std::isspace(ch);
+        }));
+
+        // right trim
+        s.erase(std::find_if(s.rbegin(), s.rend(), [](int ch)
+        {
+            return !std::isspace(ch);
+        }).base(), s.end());
+    }
+
+    template <class Container>
+    static inline void split(const std::string& str, Container& cont, const std::string& delims = " ")
+    {
+        std::size_t current, previous = 0;
+        current = str.find_first_of(delims);
+        while (current != std::string::npos)
+        {
+            cont.push_back(str.substr(previous, current - previous));
+            previous = current + 1;
+            current = str.find_first_of(delims, previous);
+        }
+        cont.push_back(str.substr(previous, current - previous));
+    }
+
+    // TODO: use the std::string_view once we will use the C++17.
+    // It should allow us to avoid data copying while we still will support both string and literal arguments.
+
+    static inline void replaceAll(std::string& data, std::string toSearch, std::string replaceStr)
+    {
+        size_t pos = data.find(toSearch);
+
+        while( pos != std::string::npos)
+        {
+            data.replace(pos, toSearch.size(), replaceStr);
+            pos = data.find(toSearch, pos + replaceStr.size());
+        }
+    }
+
+     static inline void replaceLast(std::string& str, std::string substr, std::string with)
+     {
+         size_t pos = str.rfind(substr);
+         if (pos == std::string::npos)
+             return;
+
+         str.replace(pos, substr.size(), with);
+     }
 };
 
 }

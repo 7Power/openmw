@@ -94,17 +94,19 @@ namespace MWGui
             return;
         }
 
-        bool guiMode = MWBase::Environment::get().getWindowManager()->isGuiMode();
+        MWBase::WindowManager *winMgr = MWBase::Environment::get().getWindowManager();
+        bool guiMode = winMgr->isGuiMode();
 
         if (guiMode)
         {
-            if (!MWBase::Environment::get().getWindowManager()->getCursorVisible())
+            if (!winMgr->getCursorVisible())
                 return;
             const MyGUI::IntPoint& mousePos = MyGUI::InputManager::getInstance().getMousePosition();
 
-            if (MWBase::Environment::get().getWindowManager()->getWorldMouseOver() && ((MWBase::Environment::get().getWindowManager()->getMode() == GM_Console)
-                || (MWBase::Environment::get().getWindowManager()->getMode() == GM_Container)
-                || (MWBase::Environment::get().getWindowManager()->getMode() == GM_Inventory)))
+            if (winMgr->getWorldMouseOver() &&
+                (winMgr->isConsoleMode() ||
+                (winMgr->getMode() == GM_Container) ||
+                (winMgr->getMode() == GM_Inventory)))
             {
                 if (mFocusObject.isEmpty ())
                     return;
@@ -112,7 +114,7 @@ namespace MWGui
                 const MWWorld::Class& objectclass = mFocusObject.getClass();
 
                 MyGUI::IntSize tooltipSize;
-                if ((!objectclass.hasToolTip(mFocusObject))&&(MWBase::Environment::get().getWindowManager()->getMode() == GM_Console))
+                if (!objectclass.hasToolTip(mFocusObject) && winMgr->isConsoleMode())
                 {
                     setCoord(0, 0, 300, 300);
                     mDynamicToolTipBox->setVisible(true);
@@ -212,7 +214,7 @@ namespace MWGui
                 {
                     MyGUI::IntCoord avatarPos = focus->getAbsoluteCoord();
                     MyGUI::IntPoint relMousePos = MyGUI::InputManager::getInstance ().getMousePosition () - MyGUI::IntPoint(avatarPos.left, avatarPos.top);
-                    MWWorld::Ptr item = MWBase::Environment::get().getWindowManager()->getInventoryWindow ()->getAvatarSelectedItem (relMousePos.left, relMousePos.top);
+                    MWWorld::Ptr item = winMgr->getInventoryWindow ()->getAvatarSelectedItem (relMousePos.left, relMousePos.top);
 
                     mFocusObject = item;
                     if (!mFocusObject.isEmpty ())
@@ -247,6 +249,9 @@ namespace MWGui
                         int school = MWMechanics::getSpellSchool(spell, player);
                         info.text = "#{sSchool}: " + sSchoolNames[school];
                     }
+                    std::string cost = focus->getUserString("SpellCost");
+                    if (cost != "" && cost != "0")
+                        info.text += MWGui::ToolTips::getValueString(spell->mData.mCost, "#{sCastCost}");
                     info.effects = effects;
                     tooltipSize = createToolTip(info);
                 }
@@ -486,7 +491,9 @@ namespace MWGui
             effectsWidget->setEffectList(info.effects);
 
             std::vector<MyGUI::Widget*> effectItems;
-            effectsWidget->createEffectWidgets(effectItems, effectArea, coord, true, info.isPotion ? Widgets::MWEffectList::EF_NoTarget : 0);
+            int flag = info.isPotion ? Widgets::MWEffectList::EF_NoTarget : 0;
+            flag |= info.isIngredient ? Widgets::MWEffectList::EF_NoMagnitude : 0;
+            effectsWidget->createEffectWidgets(effectItems, effectArea, coord, true, flag);
             totalSize.height += coord.top-6;
             totalSize.width = std::max(totalSize.width, coord.width);
         }
@@ -644,9 +651,25 @@ namespace MWGui
     {
         std::string ret;
         ret += getMiscString(cellref.getOwner(), "Owner");
-        ret += getMiscString(cellref.getFaction(), "Faction");
-        if (cellref.getFactionRank() > 0)
-            ret += getValueString(cellref.getFactionRank(), "Rank");
+        const std::string factionId = cellref.getFaction();
+        if (!factionId.empty())
+        {
+            const MWWorld::ESMStore &store = MWBase::Environment::get().getWorld()->getStore();
+            const ESM::Faction *fact = store.get<ESM::Faction>().search(factionId);
+            if (fact != nullptr)
+            {
+                ret += getMiscString(fact->mName.empty() ? factionId : fact->mName, "Owner Faction");
+                if (cellref.getFactionRank() >= 0)
+                {
+                    int rank = cellref.getFactionRank();
+                    const std::string rankName = fact->mRanks[rank];
+                    if (rankName.empty())
+                        ret += getValueString(cellref.getFactionRank(), "Rank");
+                    else
+                        ret += getMiscString(rankName, "Rank");
+                }
+            }
+        }
 
         std::vector<std::pair<std::string, int> > itemOwners =
                 MWBase::Environment::get().getMechanicsManager()->getStolenItemOwners(cellref.getRefId());
@@ -660,6 +683,60 @@ namespace MWGui
         }
 
         ret += getMiscString(cellref.getGlobalVariable(), "Global");
+        return ret;
+    }
+
+    std::string ToolTips::getDurationString(float duration, const std::string& prefix)
+    {
+        std::string ret;
+        ret = prefix + ": ";
+
+        if (duration < 1.f)
+        {
+            ret += "0 s";
+            return ret;
+        }
+
+        constexpr int secondsPerMinute = 60; // 60 seconds
+        constexpr int secondsPerHour = secondsPerMinute * 60; // 60 minutes
+        constexpr int secondsPerDay = secondsPerHour * 24; // 24 hours
+        constexpr int secondsPerMonth = secondsPerDay * 30; // 30 days
+        constexpr int secondsPerYear = secondsPerDay * 365;
+        int fullDuration = static_cast<int>(duration);
+        int units = 0;
+        int years = fullDuration / secondsPerYear;
+        int months = fullDuration % secondsPerYear / secondsPerMonth;
+        int days = fullDuration % secondsPerYear % secondsPerMonth / secondsPerDay; // Because a year is not exactly 12 "months"
+        int hours = fullDuration % secondsPerDay / secondsPerHour;
+        int minutes = fullDuration % secondsPerHour / secondsPerMinute;
+        int seconds = fullDuration % secondsPerMinute;
+        if (years)
+        {
+            units++;
+            ret += toString(years) + " y ";
+        }
+        if (months)
+        {
+            units++;
+            ret += toString(months) + " mo ";
+        }
+        if (units < 2 && days)
+        {
+            units++;
+            ret += toString(days) + " d ";
+        }
+        if (units < 2 && hours)
+        {
+            units++;
+            ret += toString(hours) + " h ";
+        }
+        if (units >= 2)
+            return ret;
+        if (minutes)
+            ret += toString(minutes) + " min ";
+        if (seconds)
+            ret += toString(seconds) + " s ";
+
         return ret;
     }
 

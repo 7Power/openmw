@@ -500,7 +500,12 @@ namespace MWWorld
     }
     void Store<ESM::Land>::setUp()
     {
+        // The land is static for given game session, there is no need to refresh it every load.
+        if (mBuilt)
+            return;
+
         std::sort(mStatic.begin(), mStatic.end(), Compare());
+        mBuilt = true;
     }
 
 
@@ -786,6 +791,14 @@ namespace MWWorld
     size_t Store<ESM::Cell>::getSize() const
     {
         return mSharedInt.size() + mSharedExt.size();
+    }
+    size_t Store<ESM::Cell>::getExtSize() const
+    {
+        return mSharedExt.size();
+    }
+    size_t Store<ESM::Cell>::getIntSize() const
+    {
+        return mSharedInt.size();
     }
     void Store<ESM::Cell>::listIdentifier(std::vector<std::string> &list) const
     {
@@ -1084,6 +1097,18 @@ namespace MWWorld
         }
 
         return RecordId(dialogue.mId, isDeleted);
+    }
+
+    template<>
+    bool Store<ESM::Dialogue>::eraseStatic(const std::string &id)
+    {
+        auto it = mStatic.find(Misc::StringUtils::lowerCase(id));
+
+        if (it != mStatic.end() && Misc::StringUtils::ciEqual(it->second.mId, id)) {
+            mStatic.erase(it);
+        }
+
+        return true;
     }
 
 }

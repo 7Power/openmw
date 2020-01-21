@@ -29,7 +29,7 @@ endif (GIT_CHECKOUT)
 # source files
 
 add_component_dir (settings
-    settings
+    settings parser
     )
 
 add_component_dir (bsa
@@ -217,7 +217,6 @@ add_library(components STATIC ${COMPONENT_FILES} ${MOC_SRCS} ${ESM_UI_HDR})
 target_link_libraries(components
     ${Boost_SYSTEM_LIBRARY}
     ${Boost_FILESYSTEM_LIBRARY}
-    ${Boost_THREAD_LIBRARY}
     ${Boost_PROGRAM_OPTIONS_LIBRARY}
     ${Boost_IOSTREAMS_LIBRARY}
     ${OSG_LIBRARIES}

@@ -54,18 +54,6 @@ based on whether the caps lock key was on or off at the time you exited.
 
 This settings can be toggled in game by pressing the CapsLock key and exiting.
 
-allow third person zoom
------------------------
-
-:Type:		boolean
-:Range:		True/False
-:Default:	False
-
-Allow zooming in and out using the middle mouse wheel in third person view.
-This feature may not work correctly if the mouse wheel is bound to other actions,
-and may be triggered accidentally in some cases, so is disabled by default.
-This setting can only be configured by editing the settings configuration file.
-
 camera sensitivity
 ------------------
 
@@ -133,3 +121,16 @@ which are always sent if a controller is present and detected.
 Disabling this setting can be useful for working around controller-related issues or for setting up split-screen gameplay configurations.
 
 This setting can be toggled in game with the Enable Joystick button in the Controls panel of the Options menu.
+
+gamepad cursor speed
+--------------------
+
+:Type: float
+:Range: >0
+:Default: 1.0
+
+This setting controls the speed of the cursor within GUI mode when using the joystick.
+This setting has no effect on the camera rotation speed, which is controlled by the
+camera sensitivity setting.
+
+This setting can only be configured by editing the settings configuration file.

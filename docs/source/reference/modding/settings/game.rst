@@ -72,13 +72,10 @@ can loot during death animation
 :Default:	True
 
 If this setting is true, the player is allowed to loot actors (e.g. summoned creatures) during death animation, 
-if they are not in combat. However disposing corpses during death animation is not recommended - 
-death counter may not be incremented, and this behaviour can break quests.
-This is how Morrowind behaves.
+if they are not in combat. In this case we have to increment death counter and run disposed actor's script instantly.
 
 If this setting is false, player has to wait until end of death animation in all cases.
-This case is more safe, but makes using of summoned creatures exploit 
-(looting summoned Dremoras and Golden Saints for expensive weapons) a lot harder.
+Makes using of summoned creatures exploit (looting summoned Dremoras and Golden Saints for expensive weapons) a lot harder.
 Conflicts with mannequin mods, which use SkipAnim to prevent end of death animation.
 
 This setting can be toggled in Advanced tab of the launcher.
@@ -106,13 +103,13 @@ actors processing range
 :Range:		3584 to 7168
 :Default:	7168
 
-This setting allows to specify a distance from player in game units, in which OpenMW updates actor's state.
+This setting specifies the actor state update distance from the player in game units.
 Actor state update includes AI, animations, and physics processing.
-Actors near that border start softly fade out instead of just appearing/disapperaing.
-It is not recommended to change this value from default if you use mods with
-long-range AiTravel packages (e.g. patrols, caravans and travellers).
+Actors close to this distance softly fade in and out instead of appearing or disappearing abruptly.
+Keep in mind that actors running Travel AI packages are always active to avoid
+issues in mods with long-range AiTravel packages (for example, patrols, caravans and travellers).
 
-This setting can be controlled in game with the "Actors processing range slider" in the Prefs panel of the Options menu.
+This setting can be controlled in game with the "Actors Processing Range" slider in the Prefs panel of the Options menu.
 
 classic reflected absorb spells behavior
 ----------------------------------------
@@ -187,6 +184,22 @@ Otherwise they wait for the enemies or the player to do an attack first.
 Please note this setting has not been extensively tested and could have side effects with certain quests.
 This setting can be toggled in Advanced tab of the launcher.
 
+shield sheathing
+----------------
+
+:Type:		boolean
+:Range:		True/False
+:Default:	False
+
+If this setting is true, OpenMW will utilize shield sheathing-compatible assets to display holstered shields.
+
+To make use of this, you need to have an xbase_anim_sh.nif file with weapon bones that will be injected into the skeleton.
+Also you can use additional _sh meshes for more precise shield placement.
+Warning: this feature may conflict with mods that use pseudo-shields to emulate item in actor's hand (e.g. books, baskets, pick axes).
+To avoid conflicts, you can use _sh mesh without "Bip01 Sheath" node for such "shields" meshes, or declare its bodypart as Clothing type, not as Armor.
+Also you can use an _sh node with empty "Bip01 Sheath" node.
+In this case the engine will use basic shield model, but will use transformations from the "Bip01 Sheath" node.
+
 weapon sheathing
 ----------------
 
@@ -238,3 +251,50 @@ An enchanted bow with chitin arrows will no longer be enough for the purpose, wh
 This was previously the default engine behavior that diverged from Morrowind design.
 
 This setting can be toggled in Advanced tab of the launcher.
+
+strength influences hand to hand
+--------------------------------
+
+:Type:		integer
+:Range:		0, 1, 2
+:Default:	0
+
+This setting controls the behavior of factoring of Strength attribute into hand-to-hand damage, which is using the formula
+Morrowind Code Patch uses for its equivalent feature: damage is multiplied by its value divided by 40.
+
+0: Strength attribute is ignored
+1: Strength attribute is factored in damage from any actor
+2: Strength attribute is factored in damage from any actor except werewolves
+
+This setting can be controlled in Advanced tab of the launcher.
+
+normalise race speed
+--------------------
+
+:Type:		boolean
+:Range:		True/False
+:Default:	False
+
+By default race weight is factored into horizontal movement speed like in Morrowind.
+For example, an NPC which has 1.2 race weight is faster than an NPC with the exact same stats and weight 1.0 by a factor of 120%.
+If this setting is true, race weight is ignored in the calculations which allows for a movement behavior
+equivalent to the one introduced by the equivalent Morrowind Code Patch feature.
+This makes the movement speed behavior more fair between different races.
+
+This setting can be controlled in Advanced tab of the launcher.
+
+projectiles enchant multiplier
+------------------------------
+
+:Type:		floating point
+:Range:		0.0 to 1.0
+:Default:	0.0
+
+The value of this setting determines how many projectiles (thrown weapons, arrows and bolts) you can enchant at once according to the following formula:
+
+count = (soul gem charge * projectiles enchant multiplier) / enchantment strength
+
+A value of 0 means that you can only enchant one projectile.
+If you want to have Morrowind Code Patch-like count of projectiles being enchanted at once, set this value to 0.25 (i.e. 25% of the charge).
+
+This setting can only be configured by editing the settings configuration file.

@@ -74,7 +74,6 @@ bool Launcher::AdvancedPage::loadSettings()
     loadSettingBool(preventMerchantEquippingCheckBox, "prevent merchant equipping", "Game");
     loadSettingBool(classicReflectedAbsorbSpellsCheckBox, "classic reflected absorb spells behavior", "Game");
     loadSettingBool(rebalanceSoulGemValuesCheckBox, "rebalance soul gem values", "Game");
-    loadSettingBool(chargeForEveryFollowerCheckBox, "charge for every follower travelling", "Game");
     loadSettingBool(enchantedWeaponsMagicalCheckBox, "enchanted weapons are magical", "Game");
     loadSettingBool(permanentBarterDispositionChangeCheckBox, "barter disposition change is permanent", "Game");
     int unarmedFactorsStrengthIndex = mEngineSettings.getInt("strength influences hand to hand", "Game");
@@ -82,9 +81,16 @@ bool Launcher::AdvancedPage::loadSettings()
         unarmedFactorsStrengthComboBox->setCurrentIndex(unarmedFactorsStrengthIndex);
     loadSettingBool(requireAppropriateAmmunitionCheckBox, "only appropriate ammunition bypasses resistance", "Game");
     loadSettingBool(magicItemAnimationsCheckBox, "use magic item animations", "Game");
+    loadSettingBool(normaliseRaceSpeedCheckBox, "normalise race speed", "Game");
+    connect(animSourcesCheckBox, SIGNAL(toggled(bool)), this, SLOT(slotAnimSourcesToggled(bool)));
+    loadSettingBool(animSourcesCheckBox, "use additional anim sources", "Game");
+    if (animSourcesCheckBox->checkState())
+    {
+        loadSettingBool(weaponSheathingCheckBox, "weapon sheathing", "Game");
+        loadSettingBool(shieldSheathingCheckBox, "shield sheathing", "Game");
+    }
 
     // Input Settings
-    loadSettingBool(allowThirdPersonZoomCheckBox, "allow third person zoom", "Input");
     loadSettingBool(grabCursorCheckBox, "grab cursor", "Input");
     loadSettingBool(toggleSneakCheckBox, "toggle sneak", "Input");
 
@@ -135,7 +141,6 @@ void Launcher::AdvancedPage::saveSettings()
     saveSettingBool(preventMerchantEquippingCheckBox, "prevent merchant equipping", "Game");
     saveSettingBool(rebalanceSoulGemValuesCheckBox, "rebalance soul gem values", "Game");
     saveSettingBool(classicReflectedAbsorbSpellsCheckBox, "classic reflected absorb spells behavior", "Game");
-    saveSettingBool(chargeForEveryFollowerCheckBox, "charge for every follower travelling", "Game");
     saveSettingBool(enchantedWeaponsMagicalCheckBox, "enchanted weapons are magical", "Game");
     saveSettingBool(permanentBarterDispositionChangeCheckBox, "barter disposition change is permanent", "Game");
     int unarmedFactorsStrengthIndex = unarmedFactorsStrengthComboBox->currentIndex();
@@ -143,9 +148,12 @@ void Launcher::AdvancedPage::saveSettings()
         mEngineSettings.setInt("strength influences hand to hand", "Game", unarmedFactorsStrengthIndex);
     saveSettingBool(requireAppropriateAmmunitionCheckBox, "only appropriate ammunition bypasses resistance", "Game");
     saveSettingBool(magicItemAnimationsCheckBox, "use magic item animations", "Game");
+    saveSettingBool(normaliseRaceSpeedCheckBox, "normalise race speed", "Game");
+    saveSettingBool(animSourcesCheckBox, "use additional anim sources", "Game");
+    saveSettingBool(weaponSheathingCheckBox, "weapon sheathing", "Game");
+    saveSettingBool(shieldSheathingCheckBox, "shield sheathing", "Game");
 
     // Input Settings
-    saveSettingBool(allowThirdPersonZoomCheckBox, "allow third person zoom", "Input");
     saveSettingBool(grabCursorCheckBox, "grab cursor", "Input");
     saveSettingBool(toggleSneakCheckBox, "toggle sneak", "Input");
 
@@ -185,4 +193,15 @@ void Launcher::AdvancedPage::saveSettingBool(QCheckBox *checkbox, const std::str
 void Launcher::AdvancedPage::slotLoadedCellsChanged(QStringList cellNames)
 {
     loadCellsForAutocomplete(cellNames);
+}
+
+void Launcher::AdvancedPage::slotAnimSourcesToggled(bool checked)
+{
+    weaponSheathingCheckBox->setEnabled(checked);
+    shieldSheathingCheckBox->setEnabled(checked);
+    if (!checked)
+    {
+        weaponSheathingCheckBox->setCheckState(Qt::Unchecked);
+        shieldSheathingCheckBox->setCheckState(Qt::Unchecked);
+    }
 }

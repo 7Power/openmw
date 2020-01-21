@@ -1,4 +1,4 @@
-﻿#include "physicssystem.hpp"
+#include "physicssystem.hpp"
 
 #include <osg/Group>
 
@@ -34,6 +34,7 @@
 
 #include "../mwworld/esmstore.hpp"
 #include "../mwworld/cellstore.hpp"
+#include "../mwworld/player.hpp"
 
 #include "../mwrender/bulletdebugdraw.hpp"
 
@@ -326,7 +327,30 @@ namespace MWPhysics
             if (movement.z() > 0 && ptr.getClass().getCreatureStats(ptr).isDead() && position.z() < swimlevel)
                 velocity = osg::Vec3f(0,0,1) * 25;
 
-            ptr.getClass().getMovementSettings(ptr).mPosition[2] = 0;
+            if (ptr.getClass().getMovementSettings(ptr).mPosition[2])
+            {
+                const bool isPlayer = (ptr == MWMechanics::getPlayer());
+                // Advance acrobatics and set flag for GetPCJumping
+                if (isPlayer)
+                {
+                    ptr.getClass().skillUsageSucceeded(ptr, ESM::Skill::Acrobatics, 0);
+                    MWBase::Environment::get().getWorld()->getPlayer().setJumping(true);
+                }
+
+                // Decrease fatigue
+                if (!isPlayer || !MWBase::Environment::get().getWorld()->getGodModeState())
+                {
+                    const MWWorld::Store<ESM::GameSetting> &gmst = MWBase::Environment::get().getWorld()->getStore().get<ESM::GameSetting>();
+                    const float fFatigueJumpBase = gmst.find("fFatigueJumpBase")->mValue.getFloat();
+                    const float fFatigueJumpMult = gmst.find("fFatigueJumpMult")->mValue.getFloat();
+                    const float normalizedEncumbrance = std::min(1.f, ptr.getClass().getNormalizedEncumbrance(ptr));
+                    const float fatigueDecrease = fFatigueJumpBase + normalizedEncumbrance * fFatigueJumpMult;
+                    MWMechanics::DynamicStat<float> fatigue = ptr.getClass().getCreatureStats(ptr).getFatigue();
+                    fatigue.setCurrent(fatigue.getCurrent() - fatigueDecrease);
+                    ptr.getClass().getCreatureStats(ptr).setFatigue(fatigue);
+                }
+                ptr.getClass().getMovementSettings(ptr).mPosition[2] = 0;
+            }
 
             // Now that we have the effective movement vector, apply wind forces to it
             if (MWBase::Environment::get().getWorld()->isInStorm())
@@ -676,7 +700,7 @@ namespace MWPhysics
     {
         // First of all, try to hit where you aim to
         int hitmask = CollisionType_World | CollisionType_Door | CollisionType_HeightMap | CollisionType_Actor;
-        RayResult result = castRay(origin, origin + (orient * osg::Vec3f(0.0f, queryDistance, 0.0f)), actor, targets, CollisionType_Actor, hitmask);
+        RayResult result = castRay(origin, origin + (orient * osg::Vec3f(0.0f, queryDistance, 0.0f)), actor, targets, hitmask, CollisionType_Actor);
 
         if (result.mHit)
         {

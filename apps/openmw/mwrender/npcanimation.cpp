@@ -24,6 +24,8 @@
 
 #include <components/nifosg/nifloader.hpp> // TextKeyMapHolder
 
+#include <components/vfs/manager.hpp>
+
 #include "../mwworld/esmstore.hpp"
 #include "../mwworld/inventorystore.hpp"
 #include "../mwworld/class.hpp"
@@ -31,6 +33,7 @@
 
 #include "../mwmechanics/npcstats.hpp"
 #include "../mwmechanics/actorutil.hpp"
+#include "../mwmechanics/weapontype.hpp"
 
 #include "../mwbase/environment.hpp"
 #include "../mwbase/world.hpp"
@@ -183,7 +186,7 @@ void HeadAnimationTime::update(float dt)
     if (!mEnabled)
         return;
 
-    if (MWBase::Environment::get().getSoundManager()->sayDone(mReference))
+    if (!MWBase::Environment::get().getSoundManager()->sayActive(mReference))
     {
         mBlinkTimer += dt;
 
@@ -275,7 +278,7 @@ static NpcAnimation::PartBoneMap createPartListMap()
     result.insert(std::make_pair(ESM::PRT_LLeg, "Left Upper Leg"));
     result.insert(std::make_pair(ESM::PRT_RPauldron, "Right Clavicle"));
     result.insert(std::make_pair(ESM::PRT_LPauldron, "Left Clavicle"));
-    result.insert(std::make_pair(ESM::PRT_Weapon, "Weapon Bone"));
+    result.insert(std::make_pair(ESM::PRT_Weapon, "Weapon Bone")); // Fallback. The real node name depends on the current weapon type.
     result.insert(std::make_pair(ESM::PRT_Tail, "Tail"));
     return result;
 }
@@ -317,12 +320,6 @@ void NpcAnimation::setViewMode(NpcAnimation::ViewMode viewMode)
     assert(viewMode != VM_HeadOnly);
     if(mViewMode == viewMode)
         return;
-
-    // Disable weapon sheathing in the 1st-person mode
-    if (viewMode == VM_FirstPerson)
-        mWeaponSheathing = false;
-    else
-        mWeaponSheathing = Settings::Manager::getBool("weapon sheathing", "Game");
 
     mViewMode = viewMode;
     MWBase::Environment::get().getWorld()->scaleObject(mPtr, mPtr.getCellRef().getScale()); // apply race height after view change
@@ -412,6 +409,7 @@ void NpcAnimation::setRenderBin()
 void NpcAnimation::rebuild()
 {
     mScabbard.reset();
+    mHolsteredShield.reset();
     updateNpcBase();
 
     MWBase::Environment::get().getMechanicsManager()->forceStateUpdate(mPtr);
@@ -485,15 +483,12 @@ void NpcAnimation::updateNpcBase()
 
     setObjectRoot(smodel, true, true, false);
 
-    if (mWeaponSheathing)
-        injectWeaponBones();
-
     updateParts();
 
     if(!is1stPerson)
     {
         const std::string base = "meshes\\xbase_anim.nif";
-        if (smodel != base)
+        if (smodel != base && !isWerewolf)
             addAnimSource(base, smodel);
 
         if (smodel != defaultSkeleton && base != defaultSkeleton)
@@ -507,7 +502,7 @@ void NpcAnimation::updateNpcBase()
     else
     {
         const std::string base = "meshes\\xbase_anim.1st.nif";
-        if (smodel != base)
+        if (smodel != base && !isWerewolf)
             addAnimSource(base, smodel);
 
         addAnimSource(smodel, smodel);
@@ -517,6 +512,60 @@ void NpcAnimation::updateNpcBase()
     }
 
     mWeaponAnimationTime->updateStartTime();
+}
+
+std::string NpcAnimation::getShieldMesh(MWWorld::ConstPtr shield) const
+{
+    std::string mesh = shield.getClass().getModel(shield);
+    const ESM::Armor *armor = shield.get<ESM::Armor>()->mBase;
+    const std::vector<ESM::PartReference>& bodyparts = armor->mParts.mParts;
+    if (!bodyparts.empty())
+    {
+        const MWWorld::ESMStore &store = MWBase::Environment::get().getWorld()->getStore();
+        const MWWorld::Store<ESM::BodyPart> &partStore = store.get<ESM::BodyPart>();
+
+        // Try to get shield model from bodyparts first, with ground model as fallback
+        for (const auto& part : bodyparts)
+        {
+            if (part.mPart != ESM::PRT_Shield)
+                continue;
+
+            std::string bodypartName;
+            if (!mNpc->isMale() && !part.mFemale.empty())
+                bodypartName = part.mFemale;
+            else if (!part.mMale.empty())
+                bodypartName = part.mMale;
+
+            if (!bodypartName.empty())
+            {
+                const ESM::BodyPart *bodypart = partStore.search(bodypartName);
+                if (bodypart == nullptr || bodypart->mData.mType != ESM::BodyPart::MT_Armor)
+                    return std::string();
+                else if (!bodypart->mModel.empty())
+                {
+                    mesh = "meshes\\" + bodypart->mModel;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (mesh.empty())
+        return std::string();
+
+    std::string holsteredName = mesh;
+    holsteredName = holsteredName.replace(holsteredName.size()-4, 4, "_sh.nif");
+    if(mResourceSystem->getVFS()->exists(holsteredName))
+    {
+        osg::ref_ptr<osg::Node> shieldTemplate = mResourceSystem->getSceneManager()->getInstance(holsteredName);
+        SceneUtil::FindByNameVisitor findVisitor ("Bip01 Sheath");
+        shieldTemplate->accept(findVisitor);
+        osg::ref_ptr<osg::Node> sheathNode = findVisitor.mFoundNode;
+        if(!sheathNode)
+            return std::string();
+    }
+
+    return mesh;
 }
 
 void NpcAnimation::updateParts()
@@ -554,7 +603,7 @@ void NpcAnimation::updateParts()
     };
     static const size_t slotlistsize = sizeof(slotlist)/sizeof(slotlist[0]);
 
-    bool wasArrowAttached = (mAmmunition.get() != nullptr);
+    bool wasArrowAttached = isArrowAttached();
     mAmmunition.reset();
 
     const MWWorld::InventoryStore& inv = mPtr.getClass().getInventoryStore(mPtr);
@@ -572,7 +621,7 @@ void NpcAnimation::updateParts()
 
         int prio = 1;
         bool enchantedGlow = !store->getClass().getEnchantment(*store).empty();
-        osg::Vec4f glowColor = getEnchantmentColor(*store);
+        osg::Vec4f glowColor = store->getClass().getEnchantmentColor(*store);
         if(store->getTypeName() == typeid(ESM::Clothing).name())
         {
             prio = ((slotlist[i].mBasePriority+1)<<1) + 0;
@@ -664,7 +713,7 @@ PartHolderPtr NpcAnimation::insertBoundedPart(const std::string& model, const st
 
     osg::ref_ptr<osg::Node> attached = SceneUtil::attach(instance, mObjectRoot, bonefilter, found->second);
     if (enchantedGlow)
-        addGlow(attached, *glowColor);
+        mGlowUpdater = SceneUtil::addEnchantedGlow(attached, mResourceSystem, *glowColor);
 
     return PartHolderPtr(new PartHolder(attached));
 }
@@ -745,7 +794,26 @@ bool NpcAnimation::addOrReplaceIndividualPart(ESM::PartReferenceType type, int g
     mPartPriorities[type] = priority;
     try
     {
-        const std::string& bonename = sPartList.at(type);
+        std::string bonename = sPartList.at(type);
+        if (type == ESM::PRT_Weapon)
+        {
+            const MWWorld::InventoryStore& inv = mPtr.getClass().getInventoryStore(mPtr);
+            MWWorld::ConstContainerStoreIterator weapon = inv.getSlot(MWWorld::InventoryStore::Slot_CarriedRight);
+            if(weapon != inv.end() && weapon->getTypeName() == typeid(ESM::Weapon).name())
+            {
+                int weaponType = weapon->get<ESM::Weapon>()->mBase->mData.mType;
+                const std::string weaponBonename = MWMechanics::getWeaponType(weaponType)->mAttachBone;
+
+                if (weaponBonename != bonename)
+                {
+                    const NodeMap& nodeMap = getNodeMap();
+                    NodeMap::const_iterator found = nodeMap.find(Misc::StringUtils::lowerCase(weaponBonename));
+                    if (found != nodeMap.end())
+                        bonename = weaponBonename;
+                }
+            }
+        }
+
         // PRT_Hair seems to be the only type that breaks consistency and uses a filter that's different from the attachment bone
         const std::string bonefilter = (type == ESM::PRT_Hair) ? "hair" : bonename;
         mObjectParts[type] = insertBoundedPart(mesh, bonename, bonefilter, enchantedGlow, glowColor);
@@ -897,7 +965,7 @@ void NpcAnimation::showWeapons(bool showWeapon)
         MWWorld::ConstContainerStoreIterator weapon = inv.getSlot(MWWorld::InventoryStore::Slot_CarriedRight);
         if(weapon != inv.end())
         {
-            osg::Vec4f glowColor = getEnchantmentColor(*weapon);
+            osg::Vec4f glowColor = weapon->getClass().getEnchantmentColor(*weapon);
             std::string mesh = weapon->getClass().getModel(*weapon);
             addOrReplaceIndividualPart(ESM::PRT_Weapon, MWWorld::InventoryStore::Slot_CarriedRight, 1,
                                        mesh, !weapon->getClass().getEnchantment(*weapon).empty(), &glowColor);
@@ -906,8 +974,9 @@ void NpcAnimation::showWeapons(bool showWeapon)
             if (weapon->getTypeName() == typeid(ESM::Weapon).name() &&
                     weapon->get<ESM::Weapon>()->mBase->mData.mType == ESM::Weapon::MarksmanCrossbow)
             {
+                int ammotype = MWMechanics::getWeaponType(ESM::Weapon::MarksmanCrossbow)->mAmmoType;
                 MWWorld::ConstContainerStoreIterator ammo = inv.getSlot(MWWorld::InventoryStore::Slot_Ammunition);
-                if (ammo != inv.end() && ammo->get<ESM::Weapon>()->mBase->mData.mType == ESM::Weapon::Bolt)
+                if (ammo != inv.end() && ammo->get<ESM::Weapon>()->mBase->mData.mType == ammotype)
                     attachArrow();
             }
         }
@@ -931,7 +1000,7 @@ void NpcAnimation::showCarriedLeft(bool show)
     MWWorld::ConstContainerStoreIterator iter = inv.getSlot(MWWorld::InventoryStore::Slot_CarriedLeft);
     if(show && iter != inv.end())
     {
-        osg::Vec4f glowColor = getEnchantmentColor(*iter);
+        osg::Vec4f glowColor = iter->getClass().getEnchantmentColor(*iter);
         std::string mesh = iter->getClass().getModel(*iter);
         if (addOrReplaceIndividualPart(ESM::PRT_Shield, MWWorld::InventoryStore::Slot_CarriedLeft, 1,
                                    mesh, !iter->getClass().getEnchantment(*iter).empty(), &glowColor))
@@ -942,11 +1011,23 @@ void NpcAnimation::showCarriedLeft(bool show)
     }
     else
         removeIndividualPart(ESM::PRT_Shield);
+
+    updateHolsteredShield(mShowCarriedLeft);
 }
 
 void NpcAnimation::attachArrow()
 {
     WeaponAnimation::attachArrow(mPtr);
+
+    const MWWorld::InventoryStore& inv = mPtr.getClass().getInventoryStore(mPtr);
+    MWWorld::ConstContainerStoreIterator ammo = inv.getSlot(MWWorld::InventoryStore::Slot_Ammunition);
+    if (ammo != inv.end() && !ammo->getClass().getEnchantment(*ammo).empty())
+    {
+        osg::Group* bone = getArrowBone();
+        if (bone != nullptr && bone->getNumChildren())
+            SceneUtil::addEnchantedGlow(bone->getChild(0), mResourceSystem, ammo->getClass().getEnchantmentColor(*ammo));
+    }
+
     updateQuiver();
 }
 
@@ -962,7 +1043,15 @@ osg::Group* NpcAnimation::getArrowBone()
     if (!part)
         return nullptr;
 
-    SceneUtil::FindByNameVisitor findVisitor ("ArrowBone");
+    const MWWorld::InventoryStore& inv = mPtr.getClass().getInventoryStore(mPtr);
+    MWWorld::ConstContainerStoreIterator weapon = inv.getSlot(MWWorld::InventoryStore::Slot_CarriedRight);
+    if(weapon == inv.end() || weapon->getTypeName() != typeid(ESM::Weapon).name())
+        return nullptr;
+
+    int type = weapon->get<ESM::Weapon>()->mBase->mData.mType;
+    int ammoType = MWMechanics::getWeaponType(type)->mAmmoType;
+
+    SceneUtil::FindByNameVisitor findVisitor (MWMechanics::getWeaponType(ammoType)->mAttachBone);
     part->getNode()->accept(findVisitor);
 
     return findVisitor.mFoundNode;
@@ -1021,6 +1110,14 @@ void NpcAnimation::setWeaponGroup(const std::string &group, bool relativeDuratio
 
 void NpcAnimation::equipmentChanged()
 {
+    static const bool shieldSheathing = Settings::Manager::getBool("shield sheathing", "Game");
+    if (shieldSheathing)
+    {
+        int weaptype;
+        MWMechanics::getActiveWeapon(mPtr, &weaptype);
+        showCarriedLeft(updateCarriedLeftVisible(weaptype));
+    }
+
     updateParts();
 }
 

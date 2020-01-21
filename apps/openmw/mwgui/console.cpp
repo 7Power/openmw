@@ -1,6 +1,8 @@
 #include "console.hpp"
 
 #include <MyGUI_EditBox.h>
+#include <MyGUI_InputManager.h>
+#include <MyGUI_LayerManager.h>
 
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
@@ -150,8 +152,9 @@ namespace MWGui
     void Console::onOpen()
     {
         // Give keyboard focus to the combo box whenever the console is
-        // turned on
+        // turned on and place it over other widgets
         MWBase::Environment::get().getWindowManager()->setKeyFocusWidget(mCommandLine);
+        MyGUI::LayerManager::getInstance().upLayerItem(mMainWidget);
     }
 
     void Console::print(const std::string &msg, const std::string& color)
@@ -222,11 +225,48 @@ namespace MWGui
         resetReference();
     }
 
+    bool isWhitespace(char c)
+    {
+        return c == ' ' || c == '\t';
+    }
+
     void Console::keyPress(MyGUI::Widget* _sender,
                   MyGUI::KeyCode key,
                   MyGUI::Char _char)
     {
-        if( key == MyGUI::KeyCode::Tab)
+        if(MyGUI::InputManager::getInstance().isControlPressed())
+        {
+            if(key == MyGUI::KeyCode::W)
+            {
+                const auto& caption = mCommandLine->getCaption();
+                if(caption.empty())
+                    return;
+                size_t max = mCommandLine->getTextCursor();
+                while(max > 0 && (isWhitespace(caption[max - 1]) || caption[max - 1] == '>'))
+                    max--;
+                while(max > 0 && !isWhitespace(caption[max - 1]) && caption[max - 1] != '>')
+                    max--;
+                size_t length = mCommandLine->getTextCursor() - max;
+                if(length > 0)
+                {
+                    std::string text = caption;
+                    text.erase(max, length);
+                    mCommandLine->setCaption(text);
+                    mCommandLine->setTextCursor(max);
+                }
+            }
+            else if(key == MyGUI::KeyCode::U)
+            {
+                if(mCommandLine->getTextCursor() > 0)
+                {
+                    std::string text = mCommandLine->getCaption();
+                    text.erase(0, mCommandLine->getTextCursor());
+                    mCommandLine->setCaption(text);
+                    mCommandLine->setTextCursor(0);
+                }
+            }
+        }
+        else if(key == MyGUI::KeyCode::Tab)
         {
             std::vector<std::string> matches;
             listNames();

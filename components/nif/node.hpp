@@ -24,7 +24,7 @@ class Node : public Named
 {
 public:
     // Node flags. Interpretation depends somewhat on the type of node.
-    int flags;
+    unsigned int flags;
     Transformation trafo;
     osg::Vec3f velocity; // Unused? Might be a run-time game state
     PropertyList props;
@@ -44,7 +44,7 @@ public:
         velocity = nif->getVector3();
         props.read(nif);
 
-        hasBounds = !!nif->getInt();
+        hasBounds = nif->getBoolean();
         if(hasBounds)
         {
             nif->getInt(); // always 1
@@ -156,6 +156,29 @@ struct NiTriShape : Node
     }
 };
 
+struct NiTriStrips : Node
+{
+    NiTriStripsDataPtr data;
+    NiSkinInstancePtr skin;
+
+    void read(NIFStream *nif)
+    {
+        Node::read(nif);
+        data.read(nif);
+        skin.read(nif);
+    }
+
+    void post(NIFFile *nif)
+    {
+        Node::post(nif);
+        data.post(nif);
+        skin.post(nif);
+        if (!skin.empty())
+            nif->setUseSkinning(true);
+    }
+};
+
+
 struct NiCamera : Node
 {
     struct Camera
@@ -238,10 +261,12 @@ struct NiRotatingParticles : Node
 // A node used as the base to switch between child nodes, such as for LOD levels.
 struct NiSwitchNode : public NiNode
 {
+    unsigned int initialIndex;
+
     void read(NIFStream *nif)
     {
         NiNode::read(nif);
-        nif->getInt(); // unknown
+        initialIndex = nif->getUInt();
     }
 };
 

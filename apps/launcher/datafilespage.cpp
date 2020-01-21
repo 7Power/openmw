@@ -39,10 +39,13 @@ Launcher::DataFilesPage::DataFilesPage(Files::ConfigurationManager &cfg, Config:
     const QString encoding = mGameSettings.value("encoding", "win1252");
     mSelector->setEncoding(encoding);
 
-    mProfileDialog = new TextInputDialog(tr("New Content List"), tr("Content List name:"), this);
+    mNewProfileDialog = new TextInputDialog(tr("New Content List"), tr("Content List name:"), this);
+    mCloneProfileDialog = new TextInputDialog(tr("Clone Content List"), tr("Content List name:"), this);
 
-    connect(mProfileDialog->lineEdit(), SIGNAL(textChanged(QString)),
-            this, SLOT(updateOkButton(QString)));
+    connect(mNewProfileDialog->lineEdit(), SIGNAL(textChanged(QString)),
+            this, SLOT(updateNewProfileOkButton(QString)));
+    connect(mCloneProfileDialog->lineEdit(), SIGNAL(textChanged(QString)),
+            this, SLOT(updateCloneProfileOkButton(QString)));
 
     buildView();
     loadSettings();
@@ -61,6 +64,7 @@ void Launcher::DataFilesPage::buildView()
 
     //tool buttons
     ui.newProfileButton->setToolTip ("Create a new Content List");
+    ui.cloneProfileButton->setToolTip ("Clone the current Content List");
     ui.deleteProfileButton->setToolTip ("Delete an existing Content List");
 
     //combo box
@@ -70,6 +74,7 @@ void Launcher::DataFilesPage::buildView()
 
     // Add the actions to the toolbuttons
     ui.newProfileButton->setDefaultAction (ui.newProfileAction);
+    ui.cloneProfileButton->setDefaultAction (ui.cloneProfileAction);
     ui.deleteProfileButton->setDefaultAction (ui.deleteProfileAction);
 
     //establish connections
@@ -90,7 +95,7 @@ bool Launcher::DataFilesPage::loadSettings()
 
     qDebug() << "The current profile is: " << currentProfile;
 
-    foreach (const QString &item, profiles)
+    for (const QString &item : profiles)
         addProfile (item, false);
 
     // Hack: also add the current profile
@@ -104,15 +109,14 @@ void Launcher::DataFilesPage::populateFileViews(const QString& contentModelName)
 {
     QStringList paths = mGameSettings.getDataDirs();
 
-    foreach(const QString &path, paths)
-        mSelector->addFiles(path);
-
     mDataLocal = mGameSettings.getDataLocal();
 
     if (!mDataLocal.isEmpty())
-        mSelector->addFiles(mDataLocal);
+        paths.insert(0, mDataLocal);
 
-    paths.insert(0, mDataLocal);
+    for (const QString &path : paths)
+        mSelector->addFiles(path);
+
     PathIterator pathIterator(paths);
 
     mSelector->setProfileContent(filesInProfile(contentModelName, pathIterator));
@@ -123,7 +127,7 @@ QStringList Launcher::DataFilesPage::filesInProfile(const QString& profileName, 
     QStringList files = mLauncherSettings.getContentListFiles(profileName);
     QStringList filepaths;
 
-    foreach(const QString& file, files)
+    for (const QString& file : files)
     {
         QString filepath = pathIterator.findFirstPath(file);
 
@@ -148,7 +152,8 @@ void Launcher::DataFilesPage::saveSettings(const QString &profile)
     mLauncherSettings.setCurrentContentListName(ui.profilesComboBox->currentText());
 
     QStringList fileNames;
-    foreach(const ContentSelectorModel::EsmFile *item, items) {
+    for (const ContentSelectorModel::EsmFile *item : items)
+    {
         fileNames.append(item->fileName());
     }
     mLauncherSettings.setContentList(profileName, fileNames);
@@ -160,7 +165,8 @@ QStringList Launcher::DataFilesPage::selectedFilePaths()
     //retrieve the files selected for the profile
     ContentSelectorModel::ContentFileList items = mSelector->selectedFiles();
     QStringList filePaths;
-    foreach(const ContentSelectorModel::EsmFile *item, items) {
+    for (const ContentSelectorModel::EsmFile *item : items)
+    {
         filePaths.append(item->filePath());
     }
     return filePaths;
@@ -246,10 +252,10 @@ void Launcher::DataFilesPage::slotProfileChanged(int index)
 
 void Launcher::DataFilesPage::on_newProfileAction_triggered()
 {
-    if (mProfileDialog->exec() != QDialog::Accepted)
+    if (mNewProfileDialog->exec() != QDialog::Accepted)
         return;
 
-    QString profile = mProfileDialog->lineEdit()->text();
+    QString profile = mNewProfileDialog->lineEdit()->text();
 
     if (profile.isEmpty())
         return;
@@ -271,6 +277,20 @@ void Launcher::DataFilesPage::addProfile (const QString &profile, bool setAsCurr
 
     if (setAsCurrent)
         setProfile (ui.profilesComboBox->findText (profile), false);
+}
+
+void Launcher::DataFilesPage::on_cloneProfileAction_triggered()
+{
+    if (mCloneProfileDialog->exec() != QDialog::Accepted)
+        return;
+
+    QString profile = mCloneProfileDialog->lineEdit()->text();
+
+    if (profile.isEmpty())
+        return;
+
+    mLauncherSettings.setContentList(profile, selectedFilePaths());
+    addProfile(profile, true);
 }
 
 void Launcher::DataFilesPage::on_deleteProfileAction_triggered()
@@ -295,17 +315,16 @@ void Launcher::DataFilesPage::on_deleteProfileAction_triggered()
     checkForDefaultProfile();
 }
 
-void Launcher::DataFilesPage::updateOkButton(const QString &text)
+void Launcher::DataFilesPage::updateNewProfileOkButton(const QString &text)
 {
     // We do this here because we need the profiles combobox text
-    if (text.isEmpty()) {
-         mProfileDialog->setOkButtonEnabled(false);
-         return;
-    }
+    mNewProfileDialog->setOkButtonEnabled(!text.isEmpty() && ui.profilesComboBox->findText(text) == -1);
+}
 
-    (ui.profilesComboBox->findText(text) == -1)
-            ? mProfileDialog->setOkButtonEnabled(true)
-            : mProfileDialog->setOkButtonEnabled(false);
+void Launcher::DataFilesPage::updateCloneProfileOkButton(const QString &text)
+{
+    // We do this here because we need the profiles combobox text
+    mCloneProfileDialog->setOkButtonEnabled(!text.isEmpty() && ui.profilesComboBox->findText(text) == -1);
 }
 
 void Launcher::DataFilesPage::checkForDefaultProfile()
@@ -356,7 +375,12 @@ void Launcher::DataFilesPage::reloadCells(QStringList selectedFiles)
 
     // The following code will run only if there is not another thread currently running it
     CellNameLoader cellNameLoader;
+#if QT_VERSION >= QT_VERSION_CHECK(5,14,0)
+    QSet<QString> set = cellNameLoader.getCellNames(selectedFiles);
+    QStringList cellNamesList(set.begin(), set.end());
+#else
     QStringList cellNamesList = QStringList::fromSet(cellNameLoader.getCellNames(selectedFiles));
+#endif
     std::sort(cellNamesList.begin(), cellNamesList.end());
     emit signalLoadedCellsChanged(cellNamesList);
 }

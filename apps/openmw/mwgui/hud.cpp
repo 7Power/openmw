@@ -38,7 +38,7 @@ namespace MWGui
     public:
         WorldItemModel(float left, float top) : mLeft(left), mTop(top) {}
         virtual ~WorldItemModel() {}
-        virtual MWWorld::Ptr copyItem (const ItemStack& item, size_t count, bool setNewOwner=false)
+        virtual MWWorld::Ptr copyItem (const ItemStack& item, size_t count, bool /*allowAutoEquip*/)
         {
             MWBase::World* world = MWBase::Environment::get().getWorld();
 
@@ -47,8 +47,7 @@ namespace MWGui
                 dropped = world->placeObject(item.mBase, mLeft, mTop, count);
             else
                 dropped = world->dropObjectOnGround(world->getPlayerPtr(), item.mBase, count);
-            if (setNewOwner)
-                dropped.getCellRef().setOwner("");
+            dropped.getCellRef().setOwner("");
 
             return dropped;
         }
@@ -234,6 +233,7 @@ namespace MWGui
         if (!MWBase::Environment::get().getWindowManager ()->isGuiMode ())
             return;
 
+        MWBase::WindowManager *winMgr = MWBase::Environment::get().getWindowManager();
         if (mDragAndDrop->mIsOnDragAndDrop)
         {
             // drop item into the gameworld
@@ -248,24 +248,24 @@ namespace MWGui
             WorldItemModel drop (mouseX, mouseY);
             mDragAndDrop->drop(&drop, nullptr);
 
-            MWBase::Environment::get().getWindowManager()->changePointer("arrow");
+            winMgr->changePointer("arrow");
         }
         else
         {
-            GuiMode mode = MWBase::Environment::get().getWindowManager()->getMode();
+            GuiMode mode = winMgr->getMode();
 
-            if ( (mode != GM_Console) && (mode != GM_Container) && (mode != GM_Inventory) )
+            if (!winMgr->isConsoleMode() && (mode != GM_Container) && (mode != GM_Inventory))
                 return;
 
             MWWorld::Ptr object = MWBase::Environment::get().getWorld()->getFacedObject();
 
-            if (mode == GM_Console)
-                MWBase::Environment::get().getWindowManager()->setConsoleSelectedObject(object);
+            if (winMgr->isConsoleMode())
+                winMgr->setConsoleSelectedObject(object);
             else //if ((mode == GM_Container) || (mode == GM_Inventory))
             {
                 // pick up object
                 if (!object.isEmpty())
-                    MWBase::Environment::get().getWindowManager()->getInventoryWindow()->pickUpObject(object);
+                    winMgr->getInventoryWindow()->pickUpObject(object);
             }
         }
     }

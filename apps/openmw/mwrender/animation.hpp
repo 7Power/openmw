@@ -4,6 +4,7 @@
 #include "../mwworld/ptr.hpp"
 
 #include <components/sceneutil/controller.hpp>
+#include <components/sceneutil/util.hpp>
 
 namespace ESM
 {
@@ -34,7 +35,7 @@ namespace MWRender
 
 class ResetAccumRootCallback;
 class RotateController;
-class GlowUpdater;
+class TransparencyUpdater;
 
 class EffectAnimationTime : public SceneUtil::ControllerSource
 {
@@ -152,6 +153,8 @@ public:
 
     void setTextKeyListener(TextKeyListener* listener);
 
+    virtual bool updateCarriedLeftVisible(const int weaptype) const { return false; };
+
 protected:
     class AnimationTime : public SceneUtil::ControllerSource
     {
@@ -265,7 +268,8 @@ protected:
     bool mHasMagicEffects;
 
     osg::ref_ptr<SceneUtil::LightSource> mGlowLight;
-    osg::ref_ptr<GlowUpdater> mGlowUpdater;
+    osg::ref_ptr<SceneUtil::GlowUpdater> mGlowUpdater;
+    osg::ref_ptr<TransparencyUpdater> mTransparencyUpdater;
 
     float mAlpha;
 
@@ -328,10 +332,6 @@ protected:
      */
     virtual void addControllers();
 
-    osg::Vec4f getEnchantmentColor(const MWWorld::ConstPtr& item) const;
-
-    void addGlow(osg::ref_ptr<osg::Node> node, osg::Vec4f glowColor, float glowDuration = -1);
-
     /// Set the render bin for this animation's object root. May be customized by subclasses.
     virtual void setRenderBin();
 
@@ -365,7 +365,7 @@ public:
      * @param texture override the texture specified in the model's materials - if empty, do not override
      * @note Will not add an effect twice.
      */
-    void addEffect (const std::string& model, int effectId, bool loop = false, const std::string& bonename = "", const std::string& texture = "", float scale = 1.0f);
+    void addEffect (const std::string& model, int effectId, bool loop = false, const std::string& bonename = "", const std::string& texture = "");
     void removeEffect (int effectId);
     void removeEffects ();
     void getLoopingEffects (std::vector<int>& out) const;
@@ -455,6 +455,7 @@ public:
     /// @note The matching is case-insensitive.
     const osg::Node* getNode(const std::string& name) const;
 
+    virtual bool useShieldAnimations() const { return false; }
     virtual void showWeapons(bool showWeapon) {}
     virtual void showCarriedLeft(bool show) {}
     virtual void setWeaponGroup(const std::string& group, bool relativeDuration) {}
@@ -475,6 +476,7 @@ public:
     virtual float getHeadPitch() const;
     virtual float getHeadYaw() const;
     virtual void setAccurateAiming(bool enabled) {}
+    virtual bool canBeHarvested() const { return false; }
 
 private:
     Animation(const Animation&);
@@ -484,6 +486,8 @@ private:
 class ObjectAnimation : public Animation {
 public:
     ObjectAnimation(const MWWorld::Ptr& ptr, const std::string &model, Resource::ResourceSystem* resourceSystem, bool animated, bool allowLight);
+
+    bool canBeHarvested() const;
 };
 
 class UpdateVfxCallback : public osg::NodeCallback

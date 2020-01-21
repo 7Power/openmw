@@ -71,7 +71,7 @@ namespace MWGui
             {
                 newSpell.mType = Spell::Type_Spell;
                 std::string cost = std::to_string(spell->mData.mCost);
-                std::string chance = std::to_string(int(MWMechanics::getSpellSuccessChance(spell, mActor, nullptr, true, true)));
+                std::string chance = std::to_string(int(MWMechanics::getSpellSuccessChance(spell, mActor)));
                 newSpell.mCostColumn = cost + "/" + chance;
             }
             else
@@ -146,6 +146,19 @@ namespace MWGui
     size_t SpellModel::getItemCount() const
     {
         return mSpells.size();
+    }
+
+    SpellModel::ModelIndex SpellModel::getSelectedIndex() const
+    {
+        ModelIndex selected = -1;
+        for (SpellModel::ModelIndex i = 0; i<int(getItemCount()); ++i)
+        {
+            if (getItem(i).mSelected) {
+                selected = i;
+                break;
+            }
+        }
+        return selected;
     }
 
     Spell SpellModel::getItem(ModelIndex index) const
